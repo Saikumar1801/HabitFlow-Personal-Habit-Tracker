@@ -1,0 +1,854 @@
+"use client";
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+import { 
+  CheckCircle, X, Plus, Trash2, Edit, Calendar, Award, 
+  Sun, Moon, Activity, AlertCircle, Settings, ChevronDown,
+  Clock, RotateCcw, Sparkles, Circle, ArrowUp, ArrowDown, 
+  ExternalLink, DollarSign, Trash, Check, XCircle, CheckSquare,
+  RefreshCcw, List, Grid, Search, Bell, FileText, CheckCircle as CheckCircleIcon,
+  Book, Code, Droplet, Download, Clock as ClockIcon, Lightbulb
+} from 'lucide-react';
+import { saveAs } from 'file-saver';
+
+// ========== TYPES ==========
+interface Habit {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  completed: boolean;
+  createdAt: string;
+  streak: number;
+  history: {
+    date: string;
+    status: 'completed' | 'missed' | 'pending';
+  }[];
+  color: string;
+  icon: string;
+  reminderTime?: string;
+  priority: number;
+  xp: number;
+  timeEstimate?: number; // in minutes
+  bestTime?: 'morning' | 'afternoon' | 'evening';
+}
+
+interface User {
+  name: string;
+  level: number;
+  xp: number;
+  xpToNextLevel: number;
+  achievements: Achievement[];
+  createdAt: string;
+  streak: number;
+  longestStreak: number;
+  theme: 'light' | 'dark';
+  preferences: {
+    morningStart?: string;
+    afternoonStart?: string;
+    eveningStart?: string;
+  };
+}
+
+interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlockedAt?: string;
+  progress: number;
+  total: number;
+}
+
+interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'success' | 'warning' | 'info';
+  createdAt: string;
+  read: boolean;
+}
+
+interface TimeBlock {
+  id: string;
+  habitId: string;
+  startTime: string;
+  endTime: string;
+  date: string;
+}
+
+// ========== MOCK DATA ==========
+const generateMockData = () => {
+  const today = new Date().toISOString().split('T')[0];
+  const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  
+  const mockHabits: Habit[] = [
+    {
+      id: '1',
+      title: 'Morning Meditation',
+      description: 'Start day with 10 minutes of mindfulness',
+      category: 'Wellness',
+      completed: false,
+      createdAt: '2025-04-20',
+      streak: 5,
+      history: [
+        { date: yesterday, status: 'completed' },
+        { date: '2025-04-30', status: 'completed' },
+        { date: '2025-04-29', status: 'completed' },
+        { date: '2025-04-28', status: 'completed' },
+        { date: '2025-04-27', status: 'completed' },
+        { date: '2025-04-26', status: 'missed' },
+      ],
+      color: 'bg-blue-500',
+      icon: 'activity',
+      reminderTime: '08:00',
+      priority: 1,
+      xp: 15,
+      timeEstimate: 10,
+      bestTime: 'morning'
+    },
+    {
+      id: '2',
+      title: 'Read 30 minutes',
+      description: 'Continue current book',
+      category: 'Learning',
+      completed: false,
+      createdAt: '2025-04-18',
+      streak: 3,
+      history: [
+        { date: yesterday, status: 'completed' },
+        { date: '2025-04-30', status: 'completed' },
+        { date: '2025-04-29', status: 'completed' },
+        { date: '2025-04-28', status: 'missed' },
+      ],
+      color: 'bg-amber-500',
+      icon: 'book',
+      reminderTime: '21:00',
+      priority: 2,
+      xp: 10,
+      timeEstimate: 30,
+      bestTime: 'evening'
+    },
+    {
+      id: '3',
+      title: 'Workout',
+      description: '30 minute exercise session',
+      category: 'Fitness',
+      completed: false,
+      createdAt: '2025-04-10',
+      streak: 7,
+      history: [
+        { date: yesterday, status: 'completed' },
+        { date: '2025-04-30', status: 'completed' },
+        { date: '2025-04-29', status: 'completed' },
+        { date: '2025-04-28', status: 'completed' },
+        { date: '2025-04-27', status: 'completed' },
+        { date: '2025-04-26', status: 'completed' },
+        { date: '2025-04-25', status: 'completed' },
+      ],
+      color: 'bg-green-500',
+      icon: 'activity',
+      reminderTime: '17:00',
+      priority: 3,
+      xp: 20,
+      timeEstimate: 30,
+      bestTime: 'afternoon'
+    },
+    {
+      id: '4',
+      title: 'Drink 8 glasses of water',
+      description: 'Stay hydrated throughout the day',
+      category: 'Health',
+      completed: false,
+      createdAt: '2025-04-25',
+      streak: 6,
+      history: [
+        { date: yesterday, status: 'completed' },
+        { date: '2025-04-30', status: 'completed' },
+        { date: '2025-04-29', status: 'completed' },
+        { date: '2025-04-28', status: 'completed' },
+        { date: '2025-04-27', status: 'completed' },
+        { date: '2025-04-26', status: 'completed' },
+      ],
+      color: 'bg-cyan-500',
+      icon: 'droplet',
+      priority: 4,
+      xp: 10
+    },
+    {
+      id: '5',
+      title: 'Practice coding',
+      description: 'Work on personal project for 1 hour',
+      category: 'Learning',
+      completed: false,
+      createdAt: '2025-04-19',
+      streak: 4,
+      history: [
+        { date: yesterday, status: 'completed' },
+        { date: '2025-04-30', status: 'completed' },
+        { date: '2025-04-29', status: 'completed' },
+        { date: '2025-04-28', status: 'completed' },
+        { date: '2025-04-27', status: 'missed' },
+      ],
+      color: 'bg-purple-500',
+      icon: 'code',
+      reminderTime: '19:00',
+      priority: 5,
+      xp: 25,
+      timeEstimate: 60,
+      bestTime: 'evening'
+    }
+  ];
+
+  const mockUser: User = {
+    name: 'Alex Johnson',
+    level: 7,
+    xp: 350,
+    xpToNextLevel: 500,
+    achievements: [
+      {
+        id: 'a1',
+        title: 'Early Bird',
+        description: 'Complete morning routine for 7 days straight',
+        icon: 'sun',
+        unlockedAt: '2025-04-27',
+        progress: 7,
+        total: 7
+      },
+      {
+        id: 'a2',
+        title: 'Bookworm',
+        description: 'Read for 30 days total',
+        icon: 'book',
+        progress: 12,
+        total: 30
+      },
+      {
+        id: 'a3',
+        title: 'Fitness Fanatic',
+        description: 'Complete 20 workouts',
+        icon: 'activity',
+        progress: 15,
+        total: 20
+      },
+      {
+        id: 'a4',
+        title: 'Consistency King',
+        description: 'Maintain a 10-day streak',
+        icon: 'award',
+        progress: 7,
+        total: 10
+      }
+    ],
+    createdAt: '2025-04-01',
+    streak: 7,
+    longestStreak: 10,
+    theme: 'light',
+    preferences: {
+      morningStart: '06:00',
+      afternoonStart: '12:00',
+      eveningStart: '18:00'
+    }
+  };
+
+  const mockNotifications: Notification[] = [
+    {
+      id: 'n1',
+      title: 'Morning Reminder',
+      message: 'Time for your morning meditation!',
+      type: 'info',
+      createdAt: new Date().toISOString(),
+      read: false
+    },
+    {
+      id: 'n2',
+      title: 'Achievement Unlocked!',
+      message: 'You\'ve earned the "Early Bird" badge!',
+      type: 'success',
+      createdAt: '2025-04-27T10:30:00Z',
+      read: true
+    },
+    {
+      id: 'n3',
+      title: 'Streak Alert',
+      message: 'You\'re on a 7-day streak! Keep it up!',
+      type: 'success',
+      createdAt: '2025-05-01T22:00:00Z',
+      read: false
+    }
+  ];
+
+  const mockTimeBlocks: TimeBlock[] = [
+    {
+      id: 'tb1',
+      habitId: '1',
+      startTime: '08:00',
+      endTime: '08:10',
+      date: today
+    },
+    {
+      id: 'tb2',
+      habitId: '3',
+      startTime: '17:00',
+      endTime: '17:30',
+      date: today
+    },
+    {
+      id: 'tb3',
+      habitId: '5',
+      startTime: '19:00',
+      endTime: '20:00',
+      date: today
+    }
+  ];
+
+  return { mockHabits, mockUser, mockNotifications, mockTimeBlocks };
+};
+
+// ========== MAIN COMPONENT ==========
+export default function HabitTracker() {
+  const { mockHabits, mockUser, mockNotifications, mockTimeBlocks } = generateMockData();
+  
+  const [habits, setHabits] = useState<Habit[]>(mockHabits);
+  const [user, setUser] = useState<User>(mockUser);
+  const [notifications, setNotifications] = useState<Notification[]>(mockNotifications);
+  const [timeBlocks, setTimeBlocks] = useState<TimeBlock[]>(mockTimeBlocks);
+  const [theme, setTheme] = useState<'light' | 'dark'>(mockUser.theme);
+  const [activeTab, setActiveTab] = useState('today');
+  const [showForm, setShowForm] = useState(false);
+  const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [draggingHabit, setDraggingHabit] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showAchievement, setShowAchievement] = useState<Achievement | null>(null);
+  const [undoAction, setUndoAction] = useState<{habit: Habit, action: string} | null>(null);
+  const [showTimeBlockModal, setShowTimeBlockModal] = useState(false);
+  const [selectedHabitForTimeBlock, setSelectedHabitForTimeBlock] = useState<Habit | null>(null);
+  const [timeBlockForm, setTimeBlockForm] = useState({
+    startTime: '',
+    endTime: ''
+  });
+  const [showSmartSuggestions, setShowSmartSuggestions] = useState(false);
+  
+  const formRef = useRef<HTMLDivElement>(null);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const timeBlockRef = useRef<HTMLDivElement>(null);
+
+  // ========== EFFECTS ==========
+  useEffect(() => {
+    const storedHabits = localStorage.getItem('habits');
+    const storedUser = localStorage.getItem('user');
+    const storedTimeBlocks = localStorage.getItem('timeBlocks');
+    
+    if (storedHabits) setHabits(JSON.parse(storedHabits));
+    if (storedUser) {
+      const parsedUser = JSON.parse(storedUser);
+      setUser(parsedUser);
+      setTheme(parsedUser.theme);
+    }
+    if (storedTimeBlocks) setTimeBlocks(JSON.parse(storedTimeBlocks));
+    
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+
+    // Setup midnight check
+    const now = new Date();
+    const midnight = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + 1,
+      0, 0, 0
+    );
+    const timeToMidnight = midnight.getTime() - now.getTime();
+    
+    const midnightTimer = setTimeout(() => {
+      checkMidnightSummary();
+      // Set interval for daily midnight checks
+      setInterval(checkMidnightSummary, 24 * 60 * 60 * 1000);
+    }, timeToMidnight);
+
+    return () => clearTimeout(midnightTimer);
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('habits', JSON.stringify(habits));
+    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('timeBlocks', JSON.stringify(timeBlocks));
+  }, [habits, user, timeBlocks]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+    setUser(prev => ({...prev, theme}));
+  }, [theme]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (formRef.current && !formRef.current.contains(event.target as Node)) {
+        setShowForm(false);
+        setEditingHabit(null);
+      }
+      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
+        setShowNotifications(false);
+      }
+      if (timeBlockRef.current && !timeBlockRef.current.contains(event.target as Node)) {
+        setShowTimeBlockModal(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (undoAction) {
+      const timer = setTimeout(() => setUndoAction(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [undoAction]);
+
+  // ========== CORE FUNCTIONS ==========
+  const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+  const toggleHabitCompletion = (id: string) => {
+    setHabits(prevHabits => prevHabits.map(habit => {
+      if (habit.id === id) {
+        const wasCompleted = habit.completed;
+        const updatedHabit = {...habit, completed: !habit.completed};
+        
+        setUndoAction({habit, action: wasCompleted ? 'uncomplete' : 'complete'});
+        
+        if (!wasCompleted) {
+          // Update history and streak
+          const todayEntry = habit.history.find(entry => entry.date === today);
+          updatedHabit.history = todayEntry 
+            ? habit.history.map(entry => entry.date === today ? {...entry, status: 'completed'} : entry)
+            : [{date: today, status: 'completed'}, ...habit.history];
+          
+          // Update streak
+          const yesterday = new Date();
+          yesterday.setDate(yesterday.getDate() - 1);
+          const yesterdayStr = yesterday.toISOString().split('T')[0];
+          const yesterdayEntry = habit.history.find(entry => entry.date === yesterdayStr);
+          
+          updatedHabit.streak = (yesterdayEntry?.status === 'completed') ? habit.streak + 1 : 1;
+          addXpToUser(habit.xp);
+          checkForAchievements(updatedHabit);
+        } else {
+          updatedHabit.history = habit.history.map(entry => 
+            entry.date === today ? {...entry, status: 'missed'} : entry
+          );
+          if (updatedHabit.streak > 0) updatedHabit.streak -= 1;
+          addXpToUser(-habit.xp);
+        }
+        
+        return updatedHabit;
+      }
+      return habit;
+    }));
+  };
+
+  // ========== NEW FEATURE IMPLEMENTATIONS ==========
+
+  // 1. SMART HABIT SUGGESTIONS
+  const getSmartSuggestions = useCallback(() => {
+    // Analyze completion patterns
+    const completionRates = habits.map(habit => {
+      const totalDays = habit.history.length;
+      const completedDays = habit.history.filter(h => h.status === 'completed').length;
+      return {
+        habit,
+        completionRate: totalDays > 0 ? (completedDays / totalDays) * 100 : 0
+      };
+    });
+
+    // Find habits with low completion rates
+    const strugglingHabits = completionRates
+      .filter(item => item.completionRate < 50)
+      .sort((a, b) => a.completionRate - b.completionRate);
+
+    // Find best performing categories
+    const categoryPerformance: Record<string, {completed: number, total: number}> = {};
+    habits.forEach(habit => {
+      if (!categoryPerformance[habit.category]) {
+        categoryPerformance[habit.category] = {completed: 0, total: 0};
+      }
+      categoryPerformance[habit.category].completed += 
+        habit.history.filter(h => h.status === 'completed').length;
+      categoryPerformance[habit.category].total += habit.history.length;
+    });
+
+    // Suggest new habits in strong categories
+    const bestCategory = Object.entries(categoryPerformance)
+      .reduce((best, [category, stats]) => {
+        const rate = stats.total > 0 ? (stats.completed / stats.total) * 100 : 0;
+        return rate > best.rate ? {category, rate} : best;
+      }, {category: '', rate: 0});
+
+    const suggestions = [];
+    
+    if (strugglingHabits.length > 0) {
+      suggestions.push({
+        type: 'improvement',
+        message: `You're struggling with "${strugglingHabits[0].habit.title}". Try adjusting the time or breaking it into smaller steps.`,
+        habit: strugglingHabits[0].habit
+      });
+    }
+
+    if (bestCategory.category) {
+      const categoryHabits = {
+        Wellness: ['Deep breathing', 'Gratitude journaling'],
+        Fitness: ['Stretching', 'Walking'],
+        Learning: ['Learn a new word', 'Watch educational video'],
+        Health: ['Eat vegetables', 'Drink water'],
+        Productivity: ['Plan next day', 'Review goals']
+      };
+
+      if (categoryHabits[bestCategory.category as keyof typeof categoryHabits]) {
+        const newHabitSuggestion = categoryHabits[bestCategory.category as keyof typeof categoryHabits][0];
+        suggestions.push({
+          type: 'new',
+          message: `You're doing well with ${bestCategory.category} habits. Consider adding "${newHabitSuggestion}"`,
+          category: bestCategory.category
+        });
+      }
+    }
+
+    // Time-based suggestions
+    const now = new Date();
+    const hours = now.getHours();
+    const timeOfDay = hours < 12 ? 'morning' : hours < 17 ? 'afternoon' : 'evening';
+    
+    const timeBasedHabits = habits.filter(h => h.bestTime === timeOfDay && !h.completed);
+    if (timeBasedHabits.length > 0) {
+      suggestions.push({
+        type: 'time',
+        message: `It's ${timeOfDay} - good time for "${timeBasedHabits[0].title}"`,
+        habit: timeBasedHabits[0]
+      });
+    }
+
+    return suggestions.slice(0, 3); // Return top 3 suggestions
+  }, [habits]);
+
+  // 2. TIME-BLOCKING FUNCTIONALITY
+  const handleAddTimeBlock = (habit: Habit) => {
+    setSelectedHabitForTimeBlock(habit);
+    setTimeBlockForm({
+      startTime: habit.reminderTime || '',
+      endTime: habit.reminderTime ? 
+        addMinutesToTime(habit.reminderTime, habit.timeEstimate || 30) : 
+        addMinutesToTime('12:00', habit.timeEstimate || 30)
+    });
+    setShowTimeBlockModal(true);
+  };
+
+  const addMinutesToTime = (time: string, minutes: number) => {
+    const [hours, mins] = time.split(':').map(Number);
+    const date = new Date();
+    date.setHours(hours, mins + minutes, 0, 0);
+    return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+  };
+
+  const saveTimeBlock = () => {
+    if (!selectedHabitForTimeBlock || !timeBlockForm.startTime || !timeBlockForm.endTime) return;
+    
+    const newTimeBlock: TimeBlock = {
+      id: Date.now().toString(),
+      habitId: selectedHabitForTimeBlock.id,
+      startTime: timeBlockForm.startTime,
+      endTime: timeBlockForm.endTime,
+      date: today
+    };
+    
+    setTimeBlocks(prev => [...prev, newTimeBlock]);
+    setShowTimeBlockModal(false);
+    addNotification({
+      id: Date.now().toString(),
+      title: 'Time Block Added',
+      message: `Scheduled ${selectedHabitForTimeBlock.title} from ${timeBlockForm.startTime} to ${timeBlockForm.endTime}`,
+      type: 'info',
+      createdAt: new Date().toISOString(),
+      read: false
+    });
+  };
+
+  const renderTimeBlockView = () => {
+    const todayBlocks = timeBlocks.filter(block => block.date === today)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    
+    const timeSlots = [];
+    for (let hour = 6; hour <= 22; hour++) {
+      timeSlots.push(`${String(hour).padStart(2, '0')}:00`);
+    }
+
+    return (
+      <div className="mt-6">
+        <h3 className="text-lg font-semibold mb-4">Today's Schedule</h3>
+        <div className="relative h-96 overflow-y-auto">
+          {timeSlots.map(time => {
+            const currentBlock = todayBlocks.find(block => 
+              block.startTime <= time && block.endTime > time
+            );
+            
+            const habit = currentBlock ? habits.find(h => h.id === currentBlock.habitId) : null;
+            const isStart = currentBlock?.startTime === time;
+            const height = currentBlock ? 
+              (parseInt(currentBlock.endTime.split(':')[0]) * 60 + parseInt(currentBlock.endTime.split(':')[1]) - 
+              (parseInt(currentBlock.startTime.split(':')[0]) * 60 + parseInt(currentBlock.startTime.split(':')[1])) : 0;
+            
+            return (
+              <div key={time} className="flex border-b border-gray-200 dark:border-gray-700">
+                <div className="w-16 py-2 text-xs text-gray-500 dark:text-gray-400">{time}</div>
+                <div className="flex-1 relative">
+                  {currentBlock && isStart && (
+                    <motion.div 
+                      className={`absolute left-0 right-0 rounded-lg p-2 ${habit?.color || 'bg-gray-200'} ${theme === 'dark' ? 'text-white' : 'text-gray-800'}`}
+                      style={{ height: `${height}px` }}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                    >
+                      <div className="font-medium">{habit?.title}</div>
+                      <div className="text-xs">
+                        {currentBlock.startTime} - {currentBlock.endTime}
+                      </div>
+                    </motion.div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  // 3. DATA EXPORT FUNCTIONALITY
+  const exportData = (format: 'json' | 'csv') => {
+    const data = {
+      habits,
+      user,
+      timeBlocks,
+      stats: {
+        completionRate: (habits.filter(h => h.completed).length / habits.length) * 100,
+        totalXp: user.xp,
+        streak: user.streak
+      }
+    };
+
+    if (format === 'json') {
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      saveAs(blob, `habit-tracker-export-${new Date().toISOString().split('T')[0]}.json`);
+    } else {
+      // Convert to CSV
+      let csv = 'Habit,Category,Completed,Streak,XP\n';
+      habits.forEach(habit => {
+        csv += `"${habit.title}","${habit.category}",${habit.completed ? 'Yes' : 'No'},${habit.streak},${habit.xp}\n`;
+      });
+      
+      csv += '\n\nTime Blocks\nHabit,Start Time,End Time,Date\n';
+      timeBlocks.forEach(block => {
+        const habit = habits.find(h => h.id === block.habitId);
+        csv += `"${habit?.title || 'Unknown'}","${block.startTime}","${block.endTime}","${block.date}"\n`;
+      });
+
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      saveAs(blob, `habit-tracker-export-${new Date().toISOString().split('T')[0]}.csv`);
+    }
+
+    addNotification({
+      id: Date.now().toString(),
+      title: 'Data Exported',
+      message: `Your habits data has been exported as ${format.toUpperCase()}`,
+      type: 'success',
+      createdAt: new Date().toISOString(),
+      read: false
+    });
+  };
+
+  // 4. MIDNIGHT SUMMARY
+  const checkMidnightSummary = () => {
+    const completedToday = habits.filter(h => 
+      h.history.some(entry => entry.date === today && entry.status === 'completed')
+    ).length;
+    
+    const totalHabits = habits.length;
+    const completionRate = totalHabits > 0 ? Math.round((completedToday / totalHabits) * 100) : 0;
+    
+    addNotification({
+      id: Date.now().toString(),
+      title: 'Daily Summary',
+      message: `You completed ${completedToday}/${totalHabits} habits today (${completionRate}%)`,
+      type: 'info',
+      createdAt: new Date().toISOString(),
+      read: false
+    });
+  };
+
+  // ========== RENDER ==========
+  // ... (keep all existing render code, but add the new components)
+
+  // Add to the main return statement:
+  return (
+    <div className={`min-h-screen transition-colors duration-300 ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'}`}>
+      {/* ... existing header and main content ... */}
+
+      {/* Add Smart Suggestions Modal */}
+      <AnimatePresence>
+        {showSmartSuggestions && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <motion.div 
+              className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-xl p-6 w-full max-w-md mx-4`}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+            >
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold flex items-center">
+                  <Lightbulb className="w-5 h-5 mr-2 text-amber-500" />
+                  Smart Suggestions
+                </h2>
+                <button onClick={() => setShowSmartSuggestions(false)}>
+                  <X className="w-5 h-5 text-gray-500 hover:text-gray-700" />
+                </button>
+              </div>
+              
+              <div className="space-y-4">
+                {getSmartSuggestions().map((suggestion, index) => (
+                  <div key={index} className={`p-4 rounded-lg ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                    <p className="mb-2">{suggestion.message}</p>
+                    {suggestion.habit && (
+                      <button 
+                        className="text-sm text-blue-500 hover:text-blue-700"
+                        onClick={() => {
+                          setEditingHabit(suggestion.habit);
+                          setShowForm(true);
+                          setShowSmartSuggestions(false);
+                        }}
+                      >
+                        Edit this habit
+                      </button>
+                    )}
+                    {suggestion.type === 'new' && (
+                      <button 
+                        className="text-sm text-blue-500 hover:text-blue-700"
+                        onClick={() => {
+                          setShowForm(true);
+                          setEditingHabit(null);
+                          setShowSmartSuggestions(false);
+                        }}
+                      >
+                        Add new habit
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Time Blocking Modal */}
+      <AnimatePresence>
+        {showTimeBlockModal && selectedHabitForTimeBlock && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+            <motion.div 
+              ref={timeBlockRef}
+              className={`${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} rounded-xl shadow-xl p-6 w-full max-w-md mx-4`}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+            >
+              <h2 className="text-xl font-bold mb-4">
+                Schedule Time for {selectedHabitForTimeBlock.title}
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Start Time</label>
+                  <input
+                    type="time"
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                    value={timeBlockForm.startTime}
+                    onChange={(e) => setTimeBlockForm({...timeBlockForm, startTime: e.target.value})}
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium mb-1">End Time</label>
+                  <input
+                    type="time"
+                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600"
+                    value={timeBlockForm.endTime}
+                    onChange={(e) => setTimeBlockForm({...timeBlockForm, endTime: e.target.value})}
+                  />
+                </div>
+                
+                <div className="flex justify-end space-x-2 pt-4">
+                  <button
+                    className="px-4 py-2 border rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+                    onClick={() => setShowTimeBlockModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+                    onClick={saveTimeBlock}
+                  >
+                    Save Time Block
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Add Export Button to UI */}
+      <div className="fixed bottom-4 right-4 z-10">
+        <div className="flex space-x-2">
+          <motion.button
+            className="p-3 bg-blue-500 text-white rounded-full shadow-lg"
+            onClick={() => setShowSmartSuggestions(true)}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title="Smart Suggestions"
+          >
+            <Lightbulb className="w-5 h-5" />
+          </motion.button>
+          
+          <motion.button
+            className="p-3 bg-green-500 text-white rounded-full shadow-lg"
+            onClick={() => exportData('json')}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title="Export as JSON"
+          >
+            <FileText className="w-5 h-5" />
+          </motion.button>
+          
+          <motion.button
+            className="p-3 bg-purple-500 text-white rounded-full shadow-lg"
+            onClick={() => exportData('csv')}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            title="Export as CSV"
+          >
+            <Download className="w-5 h-5" />
+          </motion.button>
+        </div>
+      </div>
+
+      {/* Add Time Block View */}
+      {activeTab === 'today' && timeBlocks.length > 0 && renderTimeBlockView()}
+    </div>
+  );
+}
+
+// Helper function to format time
+function formatTime(time: string) {
+  const [hours, minutes] = time.split(':');
+  const hourNum = parseInt(hours);
+  return `${hourNum > 12 ? hourNum - 12 : hourNum}:${minutes} ${hourNum >= 12 ? 'PM' : 'AM'}`;
+}
